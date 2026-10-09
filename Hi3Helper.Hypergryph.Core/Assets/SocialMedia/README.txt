@@ -1,4 +1,4 @@
-Place the extracted SVG files in this directory before building.
+These SVG files are embedded into the Hypergryph core assembly at build time.
 
 Required by the current API mapping:
 - bilibili.svg
