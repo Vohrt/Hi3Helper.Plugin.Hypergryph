@@ -26,18 +26,21 @@ public partial class HgLauncherApiNews : LauncherApiNewsBase
     private readonly string _seq;
     private readonly string _subChannel;
     private readonly string _webApiUrl;
+    private readonly string? _language;
 
     private HgGetBannerRsp? _bannerResponse;
     private HgGetAnnouncementRsp? _newsResponse;
     private HgGetSidebarRsp? _sidebarResponse;
 
-    public HgLauncherApiNews(string webApiUrl, string appCode, string channel, string subChannel, string seq)
+    public HgLauncherApiNews(string webApiUrl, string appCode, string channel, string subChannel, string seq,
+        string? language = null)
     {
         _webApiUrl = webApiUrl;
         _appCode = appCode;
         _channel = channel;
         _subChannel = subChannel;
         _seq = seq;
+        _language = language;
     }
 
     [field: AllowNull] [field: MaybeNull] protected override HttpClient ApiResponseHttpClient { get; set; } = new();
@@ -299,7 +302,7 @@ public partial class HgLauncherApiNews : LauncherApiNewsBase
             AppCode = _appCode,
             Channel = _channel,
             SubChannel = _subChannel,
-            Language = SharedStatic.PluginLocaleCode?.ToLower() ?? "en-us"
+            Language = _language ?? SharedStatic.PluginLocaleCode?.ToLower() ?? "en-us"
         };
     }
 

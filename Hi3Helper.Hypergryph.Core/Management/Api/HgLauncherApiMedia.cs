@@ -24,16 +24,19 @@ public partial class HgLauncherApiMedia : LauncherApiMediaBase
     private readonly string _seq;
     private readonly string _subChannel;
     private readonly string _webApiUrl;
+    private readonly string? _language;
 
     private HgGetMainBgImageRsp? _bgResponse;
 
-    public HgLauncherApiMedia(string webApiUrl, string appCode, string channel, string subChannel, string seq)
+    public HgLauncherApiMedia(string webApiUrl, string appCode, string channel, string subChannel, string seq,
+        string? language = null)
     {
         _webApiUrl = webApiUrl;
         _appCode = appCode;
         _channel = channel;
         _subChannel = subChannel;
         _seq = seq;
+        _language = language;
     }
 
     [field: AllowNull] [field: MaybeNull] protected override HttpClient ApiResponseHttpClient { get; set; } = new();
@@ -180,7 +183,7 @@ public partial class HgLauncherApiMedia : LauncherApiMediaBase
             AppCode = _appCode,
             Channel = _channel,
             SubChannel = _subChannel,
-            Language = SharedStatic.PluginLocaleCode?.ToLower() ?? "en-us"
+            Language = _language ?? SharedStatic.PluginLocaleCode?.ToLower() ?? "en-us"
         };
     }
 }

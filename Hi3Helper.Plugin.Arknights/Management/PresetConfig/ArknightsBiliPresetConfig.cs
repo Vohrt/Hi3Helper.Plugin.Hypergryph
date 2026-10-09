@@ -68,13 +68,13 @@ public partial class ArknightsBiliPresetConfig : PluginPresetConfigBase
 
     public override ILauncherApiMedia? LauncherApiMedia
     {
-        get => field ??= new HgLauncherApiMedia(ExWebApiUrl, ExAppCode, ExChannel, ExSubChannel, ExSeq);
+        get => field ??= new HgLauncherApiMedia(ExWebApiUrl, ExAppCode, ExChannel, ExSubChannel, ExSeq, "zh-cn");
         set;
     }
 
     public override ILauncherApiNews? LauncherApiNews
     {
-        get => field ??= new HgLauncherApiNews(ExWebApiUrl, ExAppCode, ExChannel, ExSubChannel, ExSeq);
+        get => field ??= new HgLauncherApiNews(ExWebApiUrl, ExAppCode, ExChannel, ExSubChannel, ExSeq, "zh-cn");
         set;
     }
 
