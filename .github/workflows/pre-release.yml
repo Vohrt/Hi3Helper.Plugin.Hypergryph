@@ -64,10 +64,22 @@ jobs:
       - name: Prepare matrix
         id: set-matrix
         shell: bash
+        env:
+          END_VER: ${{ github.event.inputs.endfield_version }}
+          ARK_VER: ${{ github.event.inputs.arknights_version }}
+          SELECT: ${{ github.event.inputs.plugin_selection }}
         run: |
-          END_VER="${{ github.event.inputs.endfield_version }}"
-          ARK_VER="${{ github.event.inputs.arknights_version }}"
-          SELECT="${{ github.event.inputs.plugin_selection }}"
+          if [[ "$SELECT" != "all" && "$SELECT" != "Hi3Helper.Plugin.Endfield" && "$SELECT" != "Hi3Helper.Plugin.Arknights" ]]; then
+            echo "Unsupported plugin selection: $SELECT"
+            exit 1
+          fi
+
+          for version in "$END_VER" "$ARK_VER"; do
+            if [[ -n "$version" && ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+              echo "Invalid plugin version: $version"
+              exit 1
+            fi
+          done
 
           RESULT="[]"
 
