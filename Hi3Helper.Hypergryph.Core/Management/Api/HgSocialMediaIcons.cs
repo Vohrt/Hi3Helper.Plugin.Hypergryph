@@ -194,11 +194,10 @@ internal static class HgSocialMediaIcons
         }
 
         string normalized = text[svgStart..].TrimEnd();
-        normalized = ForceSvgForegroundWhite(normalized, resourceName);
         byte[] result = Encoding.UTF8.GetBytes(normalized);
 
         SharedStatic.InstanceLogger.LogInformation(
-            "[HgSocialMediaIcons] Normalized SVG resource '{ResourceName}': removedPrefixChars={RemovedPrefixChars}, startsWithSvg={StartsWithSvg}, firstCharCode=0x{FirstCharCode:X4}, forcedWhite=True",
+            "[HgSocialMediaIcons] Normalized SVG resource '{ResourceName}': removedPrefixChars={RemovedPrefixChars}, startsWithSvg={StartsWithSvg}, firstCharCode=0x{FirstCharCode:X4}",
             resourceName,
             svgStart,
             normalized.StartsWith("<svg", StringComparison.OrdinalIgnoreCase),
@@ -207,36 +206,9 @@ internal static class HgSocialMediaIcons
         return result;
     }
 
-    private static string ForceSvgForegroundWhite(string svg, string resourceName)
-    {
-        int openingTagEnd = svg.IndexOf('>');
-        if (openingTagEnd < 0)
-        {
-            SharedStatic.InstanceLogger.LogWarning(
-                "[HgSocialMediaIcons] Cannot force white color for '{ResourceName}': opening <svg> tag is incomplete.",
-                resourceName);
-            return svg;
-        }
-
-        // Most exported icons either rely on SVG's default black fill, use currentColor,
-        // or contain their own fill declarations. Injecting an !important style after the
-        // opening <svg> tag handles all three cases while preserving elements explicitly
-        // marked fill="none". Strokes are recolored only when a stroke attribute exists,
-        // so ordinary filled icons do not gain an unwanted outline.
-        const string whiteStyle =
-            "<style>svg *:not([fill=\"none\"]){fill:#fff!important;color:#fff!important;}" +
-            "svg [stroke]:not([stroke=\"none\"]){stroke:#fff!important;}</style>";
-
-        string result = svg.Insert(openingTagEnd + 1, whiteStyle);
-        SharedStatic.InstanceLogger.LogInformation(
-            "[HgSocialMediaIcons] Forced SVG foreground to white for resource '{ResourceName}'.",
-            resourceName);
-        return result;
-    }
-
     private const string FallbackPaperPlaneSvg = """
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-  <path fill="currentColor" d="M21.7 2.3a1 1 0 0 0-1.05-.23l-18 7a1 1 0 0 0 .08 1.89l7.1 2.37 2.37 7.1a1 1 0 0 0 .92.68h.03a1 1 0 0 0 .92-.61l7.87-17.1a1 1 0 0 0-.24-1.1ZM11.1 11.5 5.9 9.77l11.32-4.4-6.12 6.13Zm2.97 5.76-1.73-5.2 6.13-6.12-4.4 11.32Z"/>
+  <path fill="#fff" d="M21.7 2.3a1 1 0 0 0-1.05-.23l-18 7a1 1 0 0 0 .08 1.89l7.1 2.37 2.37 7.1a1 1 0 0 0 .92.68h.03a1 1 0 0 0 .92-.61l7.87-17.1a1 1 0 0 0-.24-1.1ZM11.1 11.5 5.9 9.77l11.32-4.4-6.12 6.13Zm2.97 5.76-1.73-5.2 6.13-6.12-4.4 11.32Z"/>
 </svg>
 """;
 }
