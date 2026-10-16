@@ -25,75 +25,27 @@ public partial class Exports
 
         async Task<bool> Impl()
         {
-            if (!TryGetGameExecutablePath(context, out var gameExecutablePath)) return false;
+            if (!TryGetStartingProcessFromContext(context, startArgument, out var process)) return false;
 
-            if (context is not
-                {
-                    GameManager: HgGameManager manager, PresetConfig: PluginPresetConfigBase presetConfig
-                }) return false;
-
-            LauncherAcquireOutcome outcome;
-
-            try
+            using (process)
             {
-                outcome = await OfficialLauncherProvider.EnsureAsync(manager, presetConfig.ProfileName,
-                    presetConfig.ZoneFullName, token);
-            }
-            catch (Exception e)
-            {
-                InstanceLogger.LogError(e, "[Endfield::LaunchGame] Failed to acquire the official launcher.");
-                return false;
-            }
-
-            if (outcome.Status == LauncherAcquireStatus.Acquired)
-            {
-                InstanceLogger.LogInformation(
-                    "[Endfield::LaunchGame] The official launcher component has been prepared. Waiting for the user to start the game again.");
-                return false;
-            }
-
-            OfficialLauncherBridge? bridge = outcome.Bridge;
-
-            if (bridge == null)
-            {
-                InstanceLogger.LogError(
-                    "[Endfield::LaunchGame] The official launcher component is unavailable. The game cannot be started.");
-                return false;
-            }
-
-            using (bridge)
-            {
-                Process process;
+                process.Start();
 
                 try
                 {
-                    process = bridge.StartGame(gameExecutablePath, startArgument,
-                        Path.GetDirectoryName(gameExecutablePath));
+                    process.PriorityBoostEnabled = isRunBoosted;
+                    process.PriorityClass = processPriority;
                 }
                 catch (Exception e)
                 {
-                    InstanceLogger.LogError(e, "[Endfield::LaunchGame] Failed to start the game process.");
-                    return false;
+                    InstanceLogger.LogError(e, "[Endfield::LaunchGame] Failed to set process priority.");
                 }
 
-                using (process)
-                {
-                    try
-                    {
-                        process.PriorityBoostEnabled = isRunBoosted;
-                        process.PriorityClass = processPriority;
-                    }
-                    catch (Exception e)
-                    {
-                        InstanceLogger.LogError(e, "[Endfield::LaunchGame] Failed to set process priority.");
-                    }
+                _ = ReadGameLog(context, token);
 
-                    _ = ReadGameLog(context, token);
+                await process.WaitForExitAsync(token);
 
-                    await process.WaitForExitAsync(token);
-
-                    return true;
-                }
+                return true;
             }
         }
     }
@@ -200,6 +152,26 @@ public partial class Exports
 
         gameExecutablePath = Path.Combine(gamePath, executablePath);
         return File.Exists(gameExecutablePath);
+    }
+
+    private static bool TryGetStartingProcessFromContext(GameManagerExtension.RunGameFromGameManagerContext context,
+        string? startArgument, [NotNullWhen(true)] out Process? process)
+    {
+        process = null;
+        if (!TryGetGameExecutablePath(context, out var startingExecutablePath)) return false;
+
+        var startInfo = string.IsNullOrEmpty(startArgument)
+            ? new ProcessStartInfo(startingExecutablePath)
+            : new ProcessStartInfo(startingExecutablePath, startArgument);
+
+        startInfo.WorkingDirectory = Path.GetDirectoryName(startingExecutablePath);
+        startInfo.UseShellExecute = false;
+
+        process = new Process
+        {
+            StartInfo = startInfo
+        };
+        return true;
     }
 
     private static async Task ReadGameLog(GameManagerExtension.RunGameFromGameManagerContext context,
