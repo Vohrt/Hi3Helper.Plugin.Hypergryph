@@ -270,6 +270,52 @@ public partial class HgGameManager : GameManagerBase
         return InitAsyncInner(true, token);
     }
 
+    internal async Task<HgGetLatestLauncherRsp?> GetLatestLauncherAsync(CancellationToken token)
+    {
+        var requestBody = new HgBatchRequest
+        {
+            Seq = _seq,
+            ProxyReqs = new List<HgProxyRequest>
+            {
+                new()
+                {
+                    Kind = "get_latest_launcher",
+                    GetLatestLauncherReq = new HgGetLatestLauncherReq
+                    {
+                        AppCode = _launcherAppCode,
+                        LauncherAppCode = _appCode,
+                        Channel = _channel,
+                        SubChannel = _subChannel,
+                        Version = string.Empty
+                    }
+                }
+            }
+        };
+
+        try
+        {
+            using var response = await ApiResponseHttpClient!.PostAsJsonAsync(_apiUrl, requestBody,
+                HgApiContext.Default.HgBatchRequest, token);
+            response.EnsureSuccessStatusCode();
+
+            var responseBody =
+                await response.Content.ReadFromJsonAsync(HgApiContext.Default.HgBatchResponse, token);
+
+            var result = responseBody?.ProxyRsps?.FirstOrDefault(x => x.Kind == "get_latest_launcher")
+                ?.GetLatestLauncherRsp;
+
+            SharedStatic.InstanceLogger.LogInformation(
+                $"[HgCore] Launcher update query - Action: {result?.Action}, Version: {result?.Version}, Size: {result?.PackageSize}");
+
+            return result;
+        }
+        catch (Exception ex)
+        {
+            SharedStatic.InstanceLogger.LogWarning($"[HgCore] Launcher update query failed: {ex.Message}");
+            return null;
+        }
+    }
+
     protected override void SetCurrentGameVersionInner(in GameVersion gameVersion)
     {
         CurrentGameVersion = gameVersion;

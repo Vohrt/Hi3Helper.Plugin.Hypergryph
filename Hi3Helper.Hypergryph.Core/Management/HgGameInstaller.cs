@@ -4,9 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
-using System.Net.Http.Headers;
 using System.Runtime.InteropServices.Marshalling;
-using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 using Hi3Helper.Hypergryph.Core.Management.Api;
@@ -214,7 +212,8 @@ public partial class HgGameInstaller : GameInstallerBase
                     if (fileInfo.Length == size)
                     {
                         var isMatch = string.IsNullOrEmpty(pack.Md5) ||
-                                      await CheckMd5Async(filePath, pack.Md5, innerToken).ConfigureAwait(false);
+                                      await HgFileDownloader.CheckMd5Async(filePath, pack.Md5, innerToken)
+                                          .ConfigureAwait(false);
 
                         if (isMatch)
                         {
@@ -223,18 +222,19 @@ public partial class HgGameInstaller : GameInstallerBase
                         }
                         else
                         {
-                            ForceDeleteFile(filePath);
+                            HgFileDownloader.ForceDeleteFile(filePath);
                         }
                     }
                     else
                     {
-                        ForceDeleteFile(filePath);
+                        HgFileDownloader.ForceDeleteFile(filePath);
                     }
                 }
 
                 if (needsDownload)
                 {
-                    if (File.Exists(tempPath) && new FileInfo(tempPath).Length > size) ForceDeleteFile(tempPath);
+                    if (File.Exists(tempPath) && new FileInfo(tempPath).Length > size)
+                        HgFileDownloader.ForceDeleteFile(tempPath);
 
                     packsToDownload.Add(pack);
                 }
@@ -274,37 +274,39 @@ public partial class HgGameInstaller : GameInstallerBase
                     var tempPath = filePath + ".tmp";
                     var expectedSize = long.Parse(pack.PackageSize ?? "0");
 
-                    await DownloadFileAsync(pack.Url!, tempPath, expectedSize, innerToken, delta =>
-                    {
-                        Interlocked.Add(
-                            ref progress.DownloadedBytes,
-                            delta);
-
-                        var nowTicks = DateTime.UtcNow.Ticks;
-
-                        if (nowTicks - Interlocked.Read(ref lastReportTicks)
-                            >= TimeSpan.TicksPerMillisecond * 500)
+                    await HgFileDownloader.DownloadFileAsync(_downloadHttpClient, pack.Url!, tempPath,
+                        expectedSize, innerToken, delta =>
                         {
-                            Interlocked.Exchange(
-                                ref lastReportTicks,
-                                nowTicks);
+                            Interlocked.Add(
+                                ref progress.DownloadedBytes,
+                                delta);
 
-                            Report(
-                                InstallProgressState.Download);
-                        }
-                    });
+                            var nowTicks = DateTime.UtcNow.Ticks;
+
+                            if (nowTicks - Interlocked.Read(ref lastReportTicks)
+                                >= TimeSpan.TicksPerMillisecond * 500)
+                            {
+                                Interlocked.Exchange(
+                                    ref lastReportTicks,
+                                    nowTicks);
+
+                                Report(
+                                    InstallProgressState.Download);
+                            }
+                        }).ConfigureAwait(false);
 
                     if (!string.IsNullOrEmpty(pack.Md5))
                     {
-                        var isMatch = await CheckMd5Async(tempPath, pack.Md5, innerToken).ConfigureAwait(false);
+                        var isMatch = await HgFileDownloader.CheckMd5Async(tempPath, pack.Md5, innerToken)
+                            .ConfigureAwait(false);
                         if (!isMatch)
                         {
-                            ForceDeleteFile(tempPath);
+                            HgFileDownloader.ForceDeleteFile(tempPath);
                             throw new Exception($"MD5 Mismatch after downloading preload file {fileName}");
                         }
                     }
 
-                    ForceDeleteFile(filePath);
+                    HgFileDownloader.ForceDeleteFile(filePath);
                     File.Move(tempPath, filePath, true);
 
                     Interlocked.Increment(ref progress.DownloadedCount);
@@ -324,117 +326,6 @@ public partial class HgGameInstaller : GameInstallerBase
             progress.TotalStateToComplete;
 
         Report(InstallProgressState.Completed);
-    }
-
-    private static void ForceDeleteFile(string filePath)
-    {
-        if (!File.Exists(filePath)) return;
-
-        try
-        {
-            File.SetAttributes(filePath, FileAttributes.Normal);
-        }
-        catch
-        {
-            // ignored
-        }
-
-        File.Delete(filePath);
-    }
-
-    private async Task DownloadFileAsync(string url, string tempPath, long expectedSize, CancellationToken token,
-        Action<long> onProgress)
-    {
-        long totalReported = 0;
-        const int maxRetries = 3;
-
-        for (var attempt = 1; attempt <= maxRetries; attempt++)
-            try
-            {
-                long existingLength = 0;
-                if (File.Exists(tempPath))
-                {
-                    existingLength = new FileInfo(tempPath).Length;
-                    if (existingLength > expectedSize)
-                    {
-                        ForceDeleteFile(tempPath);
-                        existingLength = 0;
-                    }
-                }
-
-                var diff = existingLength - totalReported;
-                if (diff != 0)
-                {
-                    onProgress(diff);
-                    totalReported += diff;
-                }
-
-                if (existingLength == expectedSize) return;
-
-                using var request = new HttpRequestMessage(HttpMethod.Get, url);
-                if (existingLength > 0)
-                    request.Headers.Range = new RangeHeaderValue(existingLength, null);
-
-                using var response = await _downloadHttpClient.SendAsync(request,
-                    HttpCompletionOption.ResponseHeadersRead, token).ConfigureAwait(false);
-
-                if (existingLength > 0 && response.StatusCode != HttpStatusCode.PartialContent)
-                {
-                    existingLength = 0;
-                    ForceDeleteFile(tempPath);
-                    if (totalReported > 0)
-                    {
-                        onProgress(-totalReported);
-                        totalReported = 0;
-                    }
-                }
-
-                response.EnsureSuccessStatusCode();
-
-                await using var stream = await response.Content.ReadAsStreamAsync(token).ConfigureAwait(false);
-                await using var fs = new FileStream(tempPath,
-                    existingLength > 0 ? FileMode.Append : FileMode.Create,
-                    FileAccess.Write,
-                    FileShare.None,
-                    81920,
-                    true);
-
-                var buffer = new byte[81920];
-                int read;
-                while ((read = await stream.ReadAsync(buffer, token).ConfigureAwait(false)) > 0)
-                {
-                    await fs.WriteAsync(buffer.AsMemory(0, read), token).ConfigureAwait(false);
-                    onProgress(read);
-                    totalReported += read;
-                }
-
-                await fs.FlushAsync(token).ConfigureAwait(false);
-                if (fs.Length != expectedSize)
-                    throw new Exception($"Size mismatch. Expected {expectedSize}, Got {fs.Length}");
-
-                return;
-            }
-            catch (Exception ex)
-            {
-                if (attempt == maxRetries)
-                    throw new Exception(
-                        $"Download failed after {maxRetries} attempts for {url} | Error: {ex.Message}");
-
-                SharedStatic.InstanceLogger.LogWarning(
-                    $"[HgInstaller] Preload download interrupted, retrying ({attempt}/{maxRetries}) for {Path.GetFileName(url)}...");
-                await Task.Delay(1000, token).ConfigureAwait(false);
-            }
-    }
-
-    private static async Task<bool> CheckMd5Async(string filePath, string expectedMd5, CancellationToken token)
-    {
-        if (!File.Exists(filePath)) return false;
-
-        using var md5 = MD5.Create();
-        await using var stream = File.OpenRead(filePath);
-        var hashBytes = await md5.ComputeHashAsync(stream, token).ConfigureAwait(false);
-        return BitConverter.ToString(hashBytes).Replace("-", "")
-            .Equals(expectedMd5, StringComparison.OrdinalIgnoreCase);
     }
 
     protected override Task UninstallAsyncInner(CancellationToken token)
