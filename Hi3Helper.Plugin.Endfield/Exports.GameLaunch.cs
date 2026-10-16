@@ -25,27 +25,72 @@ public partial class Exports
 
         async Task<bool> Impl()
         {
+            if (!TryGetGameExecutablePath(context, out var gameExecutablePath)) return false;
+
+            var gameDirectory = Path.GetDirectoryName(gameExecutablePath);
+
+            // Prefer launching the game as a child of a suspended, Hypergryph-signed
+            // helper process. Recent Endfield builds require their direct parent to be a
+            // signed "games.exe"; the helper satisfies that check without depending on
+            // the official launcher. See ParentProcessBridge for details.
+            if (ParentProcessBridge.TryCreate(gameDirectory, out var bridge, out var bridgeFailureReason))
+            {
+                using (bridge)
+                {
+                    Process bridgedProcess;
+
+                    try
+                    {
+                        bridgedProcess = bridge.StartGame(gameExecutablePath, startArgument, gameDirectory);
+                    }
+                    catch (Exception e)
+                    {
+                        InstanceLogger.LogError(e,
+                            "[Endfield::LaunchGame] Failed to start the game through the parent process bridge.");
+                        return false;
+                    }
+
+                    return await AwaitGameProcessAsync(bridgedProcess);
+                }
+            }
+
+            InstanceLogger.LogWarning(
+                $"[Endfield::LaunchGame] Parent process bridge is unavailable ({bridgeFailureReason}). Falling back to a direct launch.");
+
             if (!TryGetStartingProcessFromContext(context, startArgument, out var process)) return false;
 
-            using (process)
+            try
             {
                 process.Start();
+            }
+            catch
+            {
+                process.Dispose();
+                throw;
+            }
 
-                try
+            return await AwaitGameProcessAsync(process);
+
+            async Task<bool> AwaitGameProcessAsync(Process startedProcess)
+            {
+                using (startedProcess)
                 {
-                    process.PriorityBoostEnabled = isRunBoosted;
-                    process.PriorityClass = processPriority;
+                    try
+                    {
+                        startedProcess.PriorityBoostEnabled = isRunBoosted;
+                        startedProcess.PriorityClass = processPriority;
+                    }
+                    catch (Exception e)
+                    {
+                        InstanceLogger.LogError(e, "[Endfield::LaunchGame] Failed to set process priority.");
+                    }
+
+                    _ = ReadGameLog(context, token);
+
+                    await startedProcess.WaitForExitAsync(token);
+
+                    return true;
                 }
-                catch (Exception e)
-                {
-                    InstanceLogger.LogError(e, "[Endfield::LaunchGame] Failed to set process priority.");
-                }
-
-                _ = ReadGameLog(context, token);
-
-                await process.WaitForExitAsync(token);
-
-                return true;
             }
         }
     }
